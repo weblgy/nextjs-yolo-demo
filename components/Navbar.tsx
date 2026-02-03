@@ -8,12 +8,12 @@ export default function Navbar() {
       <div className="container flex h-16 items-center justify-between px-4 md:px-8">
         <Link href="/" className="flex items-center gap-2 font-bold text-xl">
           <Camera className="h-6 w-6" />
-          <span>My AI Lab</span>
+          <span>AI Lab</span>
         </Link>
         
         <div className="flex gap-6 text-sm font-medium items-center">
           <Link href="/" className="hover:text-primary transition-colors">Home</Link>
-          <Link href="/demo" className="hover:text-primary transition-colors">YOLO Demo</Link>
+          <Link href="/demo" className="hover:text-primary transition-colors">YOLO</Link>
           <Link href="/blog" className="hover:text-primary transition-colors">Blog</Link>
         </div>
 
