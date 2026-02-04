@@ -18,7 +18,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Link href="https://github.com/你的用户名" target="_blank">
+          <Link href="https://github.com/weblgy" target="_blank">
             <Button variant="outline" size="icon">
               <Github className="h-4 w-4" />
             </Button>

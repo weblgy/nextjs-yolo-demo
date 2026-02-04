@@ -35,12 +35,13 @@ export default function DemoPage() {
     const frameCountRef = useRef(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    
+
 
     // --- 2. 初始化加载模型 ---
     useEffect(() => {
         const initModel = async () => {
             try {
+                // 建议使用 yolo11n.onnx (nano版本) 以获得移动端最佳速度
                 const modelPath = "/model/yolo11n.onnx";
                 const session = await ort.InferenceSession.create(modelPath, {
                     executionProviders: ["wasm"],
@@ -108,9 +109,9 @@ export default function DemoPage() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    // 🔥 移动端核心：优先使用后置摄像头
+                    // 🔥 移动端核心配置：优先后置，限制分辨率以提高性能
                     facingMode: "environment",
-                    width: { ideal: 640 },
+                    width: { ideal: 640 }, // 降低分辨率有助于提高 Canvas 绘制速度
                     height: { ideal: 480 }
                 },
                 audio: false,
@@ -160,12 +161,13 @@ export default function DemoPage() {
         setIsWebcamOpen(false);
         setLoading(false);
 
+        // 退出全屏
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
     };
 
-    // --- 检测循环 ---
+    // --- 🔥🔥🔥 核心修改：优化的检测循环 ---
     const detectFrame = async () => {
         if (!videoRef.current || !canvasRef.current || !model) return;
 
@@ -174,14 +176,16 @@ export default function DemoPage() {
         const ctx = canvas.getContext("2d");
 
         if (video.readyState === 4 && !video.paused && !video.ended) {
-            // 尺寸同步：Canvas 分辨率必须等于视频原始分辨率
+            // 尺寸同步
             if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
             }
 
             const now = Date.now();
-            if (now - lastTimeRef.current >= 30 && !isProcessingRef.current) {
+            // 🔥🔥🔥 降频处理：由 30ms 改为 150ms (大约每秒检测 6 次)
+            // 这对手机至关重要，给 CPU 喘息时间，避免界面卡死
+            if (now - lastTimeRef.current >= 150 && !isProcessingRef.current) {
                 isProcessingRef.current = true;
                 lastTimeRef.current = now;
 
@@ -196,10 +200,12 @@ export default function DemoPage() {
                     const end = performance.now();
 
                     frameCountRef.current++;
+                    // 每5次检测更新一次时间显示，避免 UI 闪烁
                     if (frameCountRef.current % 5 === 0) {
                         setInferenceTime(end - start);
                     }
 
+                    // 清除画布并重绘
                     ctx?.clearRect(0, 0, canvas.width, canvas.height);
                     renderBoxes(canvas, 0.25, output.data as Float32Array, 0, 0);
 
@@ -214,13 +220,19 @@ export default function DemoPage() {
     };
 
     const toggleFullscreen = () => {
+        if (!containerRef.current) return;
+        
         if (!document.fullscreenElement) {
-            containerRef.current?.requestFullscreen().then(() => setIsFullscreen(true));
+            containerRef.current.requestFullscreen().catch(err => {
+                console.log("全屏被拦截，尝试使用 CSS 伪全屏", err);
+                setIsFullscreen(true); // 即使 API 失败，也切换 React 状态来触发 CSS 变化
+            });
         } else {
-            document.exitFullscreen().then(() => setIsFullscreen(false));
+            document.exitFullscreen().catch(() => {});
         }
     };
 
+    // 监听全屏变化事件（处理 ESC 键退出等情况）
     useEffect(() => {
         const handleChange = () => setIsFullscreen(!!document.fullscreenElement);
         document.addEventListener("fullscreenchange", handleChange);
@@ -247,50 +259,38 @@ export default function DemoPage() {
             };
             reader.readAsDataURL(file);
         }
-        // 🔥 加上这行
         e.target.value = "";
     };
 
     const handleVideoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-
-        // ⚠️ 关键修复 1: 如果没有文件直接返回，防止报错
         if (!file || !videoRef.current) return;
 
-        // 1. 立即清空之前的状态
         setImageSrc(null);
         setInferenceTime(null);
         setLoading(true);
 
-        // 2. 如果当前有正在运行的任务，先强制停止
-        // 注意：这里手动执行 stopWebcam 的部分逻辑，避免直接调用 stopWebcam() 可能带来的状态冲突
         if (requestRef.current) {
             cancelAnimationFrame(requestRef.current);
             requestRef.current = undefined;
         }
 
-        // 释放旧的 Blob URL 内存
         if (videoRef.current.src.startsWith("blob:")) {
             URL.revokeObjectURL(videoRef.current.src);
         }
 
-        // 3. 加载新视频
         const url = URL.createObjectURL(file);
         videoRef.current.src = url;
         videoRef.current.srcObject = null;
         videoRef.current.loop = true;
         videoRef.current.muted = true;
 
-        // 4. 监听视频准备就绪
         videoRef.current.oncanplay = () => {
             if (!videoRef.current) return;
-
             videoRef.current.play();
-            setIsWebcamOpen(true); // 打开显示开关
-            setLoading(false);     // 关闭 Loading
-            detectFrame();         // 启动 AI 循环
-
-            // 防止重复触发
+            setIsWebcamOpen(true);
+            setLoading(false);
+            detectFrame();
             videoRef.current.oncanplay = null;
         };
 
@@ -299,8 +299,6 @@ export default function DemoPage() {
             alert("视频无法加载或格式不支持");
         };
 
-        // 🔥 关键修复 2: 无论成功失败，最后都要清空 input 的值
-        // 这样下次选同一个文件时，onChange 才会再次触发
         event.target.value = "";
     };
 
@@ -320,10 +318,8 @@ export default function DemoPage() {
     }, [imageSrc]);
 
     return (
-        // 🔥 修改1: 容器 padding 在手机上变小 (p-2)，PC 上保持 (p-4)
         <div className="container mx-auto p-2 md:p-4 max-w-6xl">
             <div className="flex flex-col items-center mb-6 space-y-2">
-                {/* 🔥 修改2: 标题字体在手机上变小，防止换行尴尬 */}
                 <h1 className="text-2xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent text-center">
                     YOLO11 Object Detection
                 </h1>
@@ -334,48 +330,58 @@ export default function DemoPage() {
 
             <Card className="overflow-hidden border-2 border-slate-100 shadow-xl">
                 <CardContent className="p-0">
-                    {/* 视觉展示区域 */}
+              {/* --- 视觉展示区域 (PC/手机 完美适配版) --- */}
                     <div
                         ref={containerRef}
-                        // 🔥 修改3: 
-                        // - 只有全屏时才 h-screen
-                        // - 普通模式下，去掉 min-h-[480px]，改为 aspect-video (16:9) 或 min-h-[50vh]
-                        // - 这样手机竖屏时，视频区域不会太高导致看不到下面的按钮
-                        className={`relative flex justify-center items-center bg-black overflow-hidden ${isFullscreen ? "w-screen h-screen fixed inset-0 z-50 rounded-none" : "w-full min-h-[50vh] md:min-h-[480px] rounded-lg"
-                            }`}
+                        className={`relative flex justify-center items-center bg-black overflow-hidden transition-all duration-300 ${
+                            isFullscreen 
+                                ? "fixed inset-0 z-50 w-screen h-screen" // 全屏：占满屏幕
+                                : "w-full min-h-[300px] rounded-lg"      // 普通：PC上由内容撑开，给个最小高度防止塌陷
+                        }`}
                     >
-                        {/* 包装器：确保视频在手机上不超过屏幕宽度 */}
-                        <div className="relative inline-flex max-w-full max-h-full items-center justify-center">
+                        {/* 包装器核心修改：
+                            1. relative: 作为 Canvas 的定位基准
+                            2. w-auto / h-auto: 让它紧贴视频的大小，这样 Canvas 才能精准覆盖
+                        */}
+                        <div className={`relative flex items-center justify-center ${isFullscreen ? "w-full h-full" : "w-auto h-auto"}`}>
 
                             <video
                                 ref={videoRef}
-                                // 🔥 修改4: w-full 确保视频宽度自适应容器，h-auto 保持比例
-                                className={`block w-full h-auto max-w-full ${isFullscreen ? "max-h-screen" : "max-h-[80vh]"} ${!isWebcamOpen ? "hidden" : ""}`}
-                                muted
+                                autoPlay
                                 playsInline
+                                webkit-playsinline="true"
+                                muted
+                                // 🔥🔥🔥 核心修改在这里 🔥🔥🔥
+                                // 1. 手机 (默认): w-full (占满宽), h-auto (高自适应)
+                                // 2. PC (md:): w-auto (宽自适应), h-[600px] (限制高度，防止太巨大)
+                                className={`block ${
+                                    isFullscreen 
+                                        ? "w-full h-full object-contain" 
+                                        : "w-full h-auto md:w-auto md:max-h-[600px] md:max-w-full object-contain"
+                                } ${!isWebcamOpen ? "hidden" : ""}`}
                             />
 
                             {imageSrc && !isWebcamOpen && (
                                 <img
                                     src={imageSrc}
                                     alt="Preview"
-                                    className={`block w-full h-auto max-w-full ${isFullscreen ? "max-h-screen" : "max-h-[80vh]"} object-contain`}
-                                    onLoad={(e) => {
-                                        const img = e.currentTarget;
-                                        if (canvasRef.current) {
-                                            canvasRef.current.width = img.naturalWidth;
-                                            canvasRef.current.height = img.naturalHeight;
-                                        }
-                                    }}
+                                    // 同上，保持图片在 PC 上不要太大
+                                    className={`block ${
+                                        isFullscreen 
+                                            ? "w-full h-full object-contain" 
+                                            : "w-full h-auto md:w-auto md:max-h-[600px] md:max-w-full object-contain"
+                                    }`}
                                 />
                             )}
 
+                            {/* Canvas 画布 - 永远覆盖在上面的元素上 */}
                             <canvas
                                 ref={canvasRef}
-                                className="absolute inset-0 w-full h-full pointer-events-none"
+                                className="absolute inset-0 w-full h-full pointer-events-none object-contain"
                             />
                         </div>
 
+                        {/* Loading 状态 */}
                         {loading && (
                             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
                                 <Loader2 className="h-12 w-12 text-white animate-spin mb-4" />
@@ -383,15 +389,17 @@ export default function DemoPage() {
                             </div>
                         )}
 
+                        {/* 全屏切换按钮 */}
                         {isWebcamOpen && (
                             <button
                                 onClick={toggleFullscreen}
-                                className="absolute top-4 right-4 z-50 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
+                                className="absolute top-4 right-4 z-[60] p-3 bg-black/40 hover:bg-black/60 backdrop-blur-md text-white rounded-full transition-all border border-white/20"
                             >
                                 {isFullscreen ? <Minimize2 className="h-6 w-6" /> : <Maximize2 className="h-6 w-6" />}
                             </button>
                         )}
 
+                        {/* 空状态提示 */}
                         {!imageSrc && !isWebcamOpen && !loading && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-2">
                                 <Camera className="w-12 h-12 opacity-50" />
@@ -400,13 +408,8 @@ export default function DemoPage() {
                         )}
                     </div>
 
-                    {/* 控制栏 */}
-                    {/* 🔥 修改5: 
-              - flex-col: 手机上垂直排列
-              - sm:flex-row: 平板/电脑上水平排列
-          */}
+                    {/* 控制栏 - 保持不变 */}
                     <div className="p-4 bg-white border-t flex flex-col sm:flex-row gap-4 justify-between items-center">
-
                         <div className="flex items-center gap-4 text-sm font-medium w-full sm:w-auto justify-between sm:justify-start">
                             <div className={`flex items-center gap-2 ${model ? 'text-green-600' : 'text-orange-500'}`}>
                                 <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${model ? 'bg-green-500' : 'bg-orange-400 animate-pulse'}`} />
@@ -420,7 +423,6 @@ export default function DemoPage() {
                             )}
                         </div>
 
-                        {/* 按钮区域：手机上宽度占满 (w-full)，按钮平分 (grid-cols-2) */}
                         <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
                             <input
                                 type="file"
@@ -477,8 +479,7 @@ export default function DemoPage() {
                     </div>
                 </CardContent>
             </Card>
-
-            {/* 底部信息，手机上隐藏或缩小 */}
+              {/* 底部信息，手机上隐藏或缩小 */}
             <div className="mt-8 hidden md:grid grid-cols-3 gap-6 text-center">
                 {/* ... 保持原样 ... */}
                 <div className="p-4 rounded-lg bg-slate-50">

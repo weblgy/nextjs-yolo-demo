@@ -21,7 +21,7 @@ export default function Home() {
               体验 Web 推理 <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
-          <Link href="https://github.com/你的用户名" target="_blank">
+          <Link href="https://github.com/weblgy" target="_blank">
             <Button size="lg" variant="outline">查看 GitHub</Button>
           </Link>
         </div>
