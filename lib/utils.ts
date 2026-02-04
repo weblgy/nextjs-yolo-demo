@@ -19,6 +19,14 @@ export const LABELS = [
   "toothbrush"
 ];
 
+// YOLO 标准高对比度色盘
+const COLORS = [
+  "#FF3838", "#FF9D97", "#FF701F", "#FFB21D", "#CFD231",
+  "#48F90A", "#92CC17", "#3DDB86", "#1A9334", "#00D4BB",
+  "#2C99A8", "#00C2FF", "#344593", "#6473FF", "#0018EC",
+  "#8438FF", "#520085", "#CB38FF", "#FF95C8", "#FF37C7"
+];
+
 /**
  * 预处理：保持比例缩放，并填充灰色背景
  */
@@ -73,7 +81,7 @@ function iou(box1: number[], box2: number[]) {
 }
 
 /**
- * 渲染函数：修复了坐标偏移，增加了动态线宽
+ * 渲染函数：高亮优化版
  */
 export function renderBoxes(
   canvas: HTMLCanvasElement,
@@ -85,20 +93,20 @@ export function renderBoxes(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   
-  // 这里的宽高必须是 Canvas 的实际分辨率（即视频的原始分辨率）
   const imgWidth = canvas.width;
   const imgHeight = canvas.height;
   const modelSize = 640; 
 
   // --- 1. 严格的坐标反算逻辑 ---
-  // 这部分必须和 preprocess 完全一致
   const scale = Math.min(modelSize / imgWidth, modelSize / imgHeight);
   const dx = (modelSize - imgWidth * scale) / 2;
   const dy = (modelSize - imgHeight * scale) / 2;
 
-  // --- 2. 视觉样式优化 ---
-  const dynamicLineWidth = Math.max(Math.min(imgWidth / 150, 8), 2); // 稍微调细一点，更精致
-  const dynamicFontSize = Math.max(Math.min(imgWidth / 50, 24), 14);
+  // --- 2. 视觉样式优化 (加大字号和线宽) ---
+  // 线宽：最细3px，随图片变大而变粗
+  const dynamicLineWidth = Math.max(Math.min(imgWidth / 100, 10), 3); 
+  // 字号：最小16px
+  const dynamicFontSize = Math.max(Math.min(imgWidth / 30, 40), 16);
   
   ctx.font = `bold ${dynamicFontSize}px Arial`;
   ctx.lineWidth = dynamicLineWidth;
@@ -125,9 +133,6 @@ export function renderBoxes(
       const w  = boxes_data[2 * channel_stride + i];
       const h  = boxes_data[3 * channel_stride + i];
 
-      // --- 核心修复：先减去偏移，再除以缩放 ---
-      // (cx - dx) 才是还原到“无黑边”的缩放图上的坐标
-      // 然后除以 scale 还原到原图尺寸
       const x = (cx - dx) / scale;
       const y = (cy - dy) / scale;
       const width = w / scale;
@@ -157,26 +162,29 @@ export function renderBoxes(
   result_boxes.forEach((box) => {
     const [x1, y1, x2, y2, score, labelIdx] = box;
     const label = LABELS[labelIdx] || "unknown";
-    const text = `${label} ${(score * 100).toFixed(0)}%`;
+    // 限制最高显示 100%，防止数据显示异常
+    const displayScore = Math.min(score * 100, 100).toFixed(0);
+    const text = `${label} ${displayScore}%`;
     
-    // 使用鲜艳的颜色
-    const color = "#00FF00"; 
+    // --- 3. 使用彩色 ---
+    const color = COLORS[labelIdx % COLORS.length];
     
     ctx.strokeStyle = color;
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
     const textMetrics = ctx.measureText(text);
-    const textWidth = textMetrics.width + 6;
-    const textHeight = dynamicFontSize + 6;
+    const textWidth = textMetrics.width + 10;
+    const textHeight = dynamicFontSize + 8;
 
+    // 标签位置修正：如果框在顶部，标签画在框里面
     let labelY = y1 - textHeight;
     if (labelY < 0) labelY = y1; 
 
     ctx.fillStyle = color;
     ctx.fillRect(x1, labelY, textWidth, textHeight);
 
-    ctx.fillStyle = "#000000"; // 黑字绿底，对比度高
+    ctx.fillStyle = "#FFFFFF"; // 白字
     ctx.textBaseline = "top";
-    ctx.fillText(text, x1 + 3, labelY + 3);
+    ctx.fillText(text, x1 + 5, labelY + 4);
   });
 }

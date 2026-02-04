@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import * as ort from "onnxruntime-web"; // 确保安装了 onnxruntime-web
+import * as ort from "onnxruntime-web";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { preprocess, renderBoxes } from "@/lib/utils";
@@ -11,13 +11,12 @@ import {
     Zap, Upload
 } from "lucide-react";
 
-// --- 1. 关键修改：使用 CDN 加载 WASM (解决手机加载失败问题) ---
+// 使用 CDN 加载 WASM
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/";
 // @ts-ignore
-ort.env.wasm.numThreads = 1; // 手机上单线程通常更稳定
+ort.env.wasm.numThreads = 1;
 
 export default function DemoPage() {
-    // --- 状态管理 ---
     const [model, setModel] = useState<ort.InferenceSession | null>(null);
     const [imageSrc, setImageSrc] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -25,7 +24,6 @@ export default function DemoPage() {
     const [isWebcamOpen, setIsWebcamOpen] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
 
-    // --- Refs ---
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const requestRef = useRef<number>(0);
@@ -36,35 +34,29 @@ export default function DemoPage() {
     const frameCountRef = useRef(0);
     const containerRef = useRef<HTMLDivElement>(null);
     
-    // 🔥 关键修改：添加 modelRef 用于动画循环，防止 "session is not defined"
     const modelRef = useRef<ort.InferenceSession | null>(null);
 
-    // --- 2. 初始化加载模型 ---
+    // --- 初始化加载模型 ---
     useEffect(() => {
         const initModel = async () => {
             try {
-                // 确保 yolo11n.onnx 放在 public/model/ 目录下
                 const modelPath = `${window.location.origin}/model/yolo11n.onnx`;
                 const session = await ort.InferenceSession.create(modelPath, {
                     executionProviders: ["wasm"],
                     graphOptimizationLevel: "all",
                 });
-                
-                // 同时更新 State (UI用) 和 Ref (动画循环用)
                 setModel(session);
                 modelRef.current = session; 
-                
                 console.log("模型加载成功!");
             } catch (e) {
                 console.error("模型加载失败:", e);
-                // 生产环境建议去掉 alert，用 console 即可
                 console.log("请检查 public/model/yolo11n.onnx 是否存在");
             }
         };
         initModel();
     }, []);
 
-    // --- 3. 静态图片推理逻辑 ---
+    // --- 静态图片推理逻辑 ---
     const runInference = async () => {
         if (!model || !imageSrc || !canvasRef.current) return;
         if (isWebcamOpen) stopWebcam();
@@ -80,6 +72,7 @@ export default function DemoPage() {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext("2d");
 
+            // --- 核心修复：画布尺寸必须严格等于图片原始尺寸 ---
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
 
@@ -94,7 +87,9 @@ export default function DemoPage() {
             const end = performance.now();
             setInferenceTime(end - start);
 
-            renderBoxes(canvas, 0.25, output.data as Float32Array, 0, 0);
+            // 🔥🔥🔥 核心修复：提高阈值到 0.50 🔥🔥🔥
+            // 这样可以过滤掉那些乱七八糟的干扰框
+            renderBoxes(canvas, 0.50, output.data as Float32Array, 0, 0);
 
         } catch (e) {
             console.error(e);
@@ -103,7 +98,7 @@ export default function DemoPage() {
         }
     };
 
-    // --- 4. 摄像头处理逻辑 ---
+    // --- 摄像头处理逻辑 ---
     const startWebcam = async () => {
         if (isWebcamOpen) {
             stopWebcam();
@@ -116,8 +111,8 @@ export default function DemoPage() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    facingMode: "environment", // 优先后置
-                    width: { ideal: 640 },     // 降低分辨率以提速
+                    facingMode: "environment",
+                    width: { ideal: 640 },
                     height: { ideal: 480 }
                 },
                 audio: false,
@@ -128,7 +123,7 @@ export default function DemoPage() {
                 videoRef.current.onloadedmetadata = () => {
                     videoRef.current?.play();
                     setIsWebcamOpen(true);
-                    detectFrame(); // 开始循环
+                    detectFrame();
                 };
             }
         } catch (err) {
@@ -145,6 +140,7 @@ export default function DemoPage() {
 
         if (videoRef.current) {
             const video = videoRef.current;
+            video.onerror = null; // 防止停止时报错
             if (video.srcObject) {
                 const stream = video.srcObject as MediaStream;
                 stream.getTracks().forEach(track => track.stop());
@@ -168,9 +164,7 @@ export default function DemoPage() {
         }
     };
 
-    // --- 检测循环 (核心优化部分) ---
     const detectFrame = async () => {
-        // 使用 modelRef.current 而不是 model，防止闭包拿不到值
         if (!videoRef.current || !canvasRef.current || !modelRef.current) return;
 
         const video = videoRef.current;
@@ -184,9 +178,6 @@ export default function DemoPage() {
             }
 
             const now = Date.now();
-            
-            // 🔥 关键修改：增加间隔到 150ms (每秒~6帧)
-            // 之前的 30ms 会让手机 CPU 瞬间 100% 然后卡死
             const FPS_INTERVAL = 150; 
             
             if (now - lastTimeRef.current >= FPS_INTERVAL && !isProcessingRef.current) {
@@ -194,36 +185,28 @@ export default function DemoPage() {
                 lastTimeRef.current = now;
 
                 try {
-                    // 必须先清空画布，否则框会重叠
                     ctx?.clearRect(0, 0, canvas.width, canvas.height);
-
                     const start = performance.now();
-
                     const inputTensorData = await preprocess(video, 640, 640);
                     const inputTensor = new ort.Tensor("float32", Float32Array.from(inputTensorData), [1, 3, 640, 640]);
                     
-                    // 使用 Ref 进行推理
                     const outputs = await modelRef.current.run({ images: inputTensor });
                     const output = outputs["output0"];
-
                     const end = performance.now();
 
                     frameCountRef.current++;
-                    // 每5次更新一次 UI 上的时间，减少重绘
                     if (frameCountRef.current % 5 === 0) {
                         setInferenceTime(end - start);
                     }
 
-                    renderBoxes(canvas, 0.25, output.data as Float32Array, 0, 0);
+                    // 视频流阈值也设为 0.5
+                    renderBoxes(canvas, 0.50, output.data as Float32Array, 0, 0);
 
                 } catch (e) {
                     console.error("推理报错:", e);
                 } finally {
                     isProcessingRef.current = false;
                 }
-            } else {
-                 // 如果没到时间，也要请求下一帧，否则循环会断
-                 // 但是这里可以不做清空，保留上一帧的框，视觉更稳定
             }
         }
         requestRef.current = requestAnimationFrame(detectFrame);
@@ -247,7 +230,6 @@ export default function DemoPage() {
         return () => stopWebcam();
     }, []);
 
-    // --- 文件上传处理 ---
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -279,34 +261,38 @@ export default function DemoPage() {
             requestRef.current = undefined;
         }
 
-        if (videoRef.current.src.startsWith("blob:")) {
-            URL.revokeObjectURL(videoRef.current.src);
+        const video = videoRef.current;
+        video.onerror = null;
+
+        if (video.src.startsWith("blob:")) {
+            URL.revokeObjectURL(video.src);
         }
 
         const url = URL.createObjectURL(file);
-        videoRef.current.src = url;
-        videoRef.current.srcObject = null;
-        videoRef.current.loop = true;
-        videoRef.current.muted = true;
+        video.src = url;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true; 
 
-        videoRef.current.oncanplay = () => {
+        video.onloadeddata = () => {
             if (!videoRef.current) return;
-            videoRef.current.play();
-            setIsWebcamOpen(true);
-            setLoading(false);
-            detectFrame();
-            videoRef.current.oncanplay = null;
+            video.play().then(() => {
+                setIsWebcamOpen(true);
+                setLoading(false);
+                detectFrame();
+            }).catch(e => console.error(e));
+            video.onloadeddata = null;
         };
 
-        videoRef.current.onerror = () => {
+        video.onerror = () => {
             setLoading(false);
             alert("视频无法加载");
         };
 
+        video.load();
         event.target.value = "";
     };
 
-    // imageSrc 改变时重置 Canvas
     useEffect(() => {
         if (imageSrc && canvasRef.current) {
             const img = new Image();
@@ -336,25 +322,30 @@ export default function DemoPage() {
                 <CardContent className="p-0">
                     <div
                         ref={containerRef}
+                        // 🔥🔥🔥 核心修复：根据是否是静态图片，动态调整容器高度 🔥🔥🔥
+                        // 如果是图片(imageSrc)，使用 h-auto 撑开；如果是视频，保持 aspect-video
                         className={`relative flex justify-center items-center bg-black overflow-hidden ${
                             isFullscreen 
                             ? "w-screen h-screen fixed inset-0 z-50 rounded-none" 
-                            : "w-full aspect-video md:h-[600px] rounded-lg"
+                            : imageSrc 
+                                ? "w-full h-auto min-h-[300px] rounded-lg" // 图片模式：高度自适应
+                                : "w-full aspect-video md:h-[600px] rounded-lg" // 视频模式
                         }`}
                     >
-                        <div className="relative inline-flex max-w-full max-h-full items-center justify-center">
+                        <div className="relative inline-flex max-w-full max-h-full items-center justify-center w-full">
                             <video
                                 ref={videoRef}
                                 className={`block w-full h-auto max-w-full max-h-full ${!isWebcamOpen ? "hidden" : ""}`}
                                 muted
-                                playsInline // 必须加，否则 iOS 无法内联播放
+                                playsInline 
                             />
 
                             {imageSrc && !isWebcamOpen && (
                                 <img
                                     src={imageSrc}
                                     alt="Preview"
-                                    className="block w-full h-auto max-w-full max-h-full object-contain"
+                                    // 🔥🔥🔥 核心修复：图片占满宽度，自动撑高 🔥🔥🔥
+                                    className="block w-full h-auto object-contain"
                                     onLoad={(e) => {
                                         const img = e.currentTarget;
                                         if (canvasRef.current) {
@@ -388,7 +379,7 @@ export default function DemoPage() {
                         )}
 
                         {!imageSrc && !isWebcamOpen && !loading && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-2">
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-2 h-64">
                                 <Camera className="w-12 h-12 opacity-50" />
                                 <p className="text-sm">点击下方按钮开始检测</p>
                             </div>
