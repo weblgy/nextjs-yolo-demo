@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, Code, ScanFace } from "lucide-react";
+import { ArrowRight, Code, ScanFace, BookOpen } from "lucide-react";
 
 export default function Home() {
   return (
@@ -28,7 +28,7 @@ export default function Home() {
       </section>
 
       {/* Feature/Projects Section */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-3 gap-6">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -61,6 +61,24 @@ export default function Home() {
             </p>
             <Link href="/blog" className="text-indigo-600 hover:underline font-medium">
               阅读博客 &rarr;
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-6 w-6 text-purple-500"/>
+              RAG 知识引擎
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-slate-500 mb-4">
+              基于 TF-IDF 语义检索 + DeepSeek LLM 的检索增强生成系统。
+              支持文档上传、自动分块索引、混合分词检索与来源引用，解决 LLM 幻觉问题。
+            </p>
+            <Link href="/rag" className="text-purple-600 hover:underline font-medium">
+              体验 RAG &rarr;
             </Link>
           </CardContent>
         </Card>

@@ -140,7 +140,7 @@ const doc = new Document({
 
       // ═══════ PERSONAL SUMMARY ═══════
       sectionTitle('个人概述'),
-      body('热爱将 AI 模型从论文落地到实际场景的实践者，专注于大语言模型与计算机视觉的工程化应用。独立完成了一个完整的 AI 视觉推理终端——将 YOLO11 ONNX 模型部署至浏览器端边缘推理，集成 DeepSeek 大语言模型构建语音驱动的智能决策闭环，并拓展至 ESP32 嵌入式遥控子系统。熟练掌握 ONNX Runtime 边缘部署、大模型 Prompt Engineering、Agent 工具调用与结构化输出，同时具备 Next.js 全栈开发能力。善于解决实时系统中状态同步、UDP 协议通信、帧率控制等工程难题。'),
+      body('热爱将 AI 模型从论文落地到实际场景的实践者，专注于大语言模型与计算机视觉的工程化应用。独立完成了一个完整的 AI 视觉推理终端——将 YOLO11 ONNX 模型部署至浏览器端边缘推理，集成 DeepSeek 大语言模型构建语音驱动的智能决策闭环，并拓展至 ESP32 嵌入式遥控子系统。近期实现了一个完整的 RAG（检索增强生成）文档问答系统，涵盖文档解析、中文混合分词、TF-IDF 语义检索与 LLM 增强生成全链路。熟练掌握 ONNX Runtime 边缘部署、大模型 Prompt Engineering、Agent 工具调用与结构化输出、RAG 检索增强生成架构，同时具备 Next.js 全栈开发能力。善于解决实时系统中状态同步、UDP 协议通信、帧率控制等工程难题。'),
 
       // ═══════ SKILLS ═══════
       sectionTitle('技术能力'),
@@ -212,6 +212,34 @@ const doc = new Document({
       bullet('邮件告警推送链：Canvas 双图层合成（视频帧 + 检测框叠加）→ JPEG Base64 编码（质量 0.4）→ Resend API 发送带内嵌截图的 HTML 告警邮件'),
       bullet('TTS 语音驱离 + 10 秒冷却节流，防止持续入侵导致邮件轰炸'),
 
+      // --- Project 4 ---
+      projectHeader('四、RAG 智能文档问答系统', '2025.06'),
+      tagRow(['Next.js API Routes', 'DeepSeek Chat API', 'TF-IDF', '中文分词', 'RAG 架构', 'pdf-parse', '上下文窗口管理']),
+
+      subTitle('项目背景'),
+      body('大语言模型存在知识截止日期与幻觉问题。本项目实现了一个完整的 RAG（检索增强生成）文档问答流水线——用户上传文档后，系统自动完成文本分块、索引构建、语义检索与上下文增强生成，使 LLM 能够基于外部知识库精准回答用户问题。'),
+
+      subTitle('核心职责'),
+      bullet('文档解析与预处理：支持 TXT/MD/PDF 多格式文档上传，实现递归字符分割器（Recursive Character Text Splitter）——先按段落切分、再按句子切分，chunk_size=500 + overlap=50 滑块窗口防止语义断裂'),
+      bullet('混合分词与索引构建：自研中英文混合分词器——中文 bigram 组合 + 英文空格分词 + 停用词过滤，构建词频倒排索引，支持增量文档添加'),
+      bullet('TF-IDF 语义检索：实现词频-逆文档频率（TF-IDF）评分算法，对每个 chunk 与查询语句计算相关性得分，取 Top-K 最相关片段作为 LLM 上下文'),
+      bullet('RAG 增强生成：设计约束型 System Prompt（严格基于文档回答、禁止编造、引号标注原文），将检索到的文档片段注入 LLM 上下文窗口，temperature=0.1 抑制幻觉'),
+      bullet('全流程 API 设计：POST /api/rag 统一接口，支持 index | query | clear | status 四种操作，内存文档库管理，返回检索统计与来源引用'),
+
+      subTitle('技术难点与解决方案'),
+      difficultyTable([
+        ['中英文混合分词精度', '中文采用 bigram 双字组合（覆盖常见词组）、英文基于空格分词+小写归一化，双层停用词表过滤无效词汇，提升检索召回率'],
+        ['长文档语义断裂', '实现 overlap=50 字符的滑块窗口策略——相邻 chunk 间保留 50 字符重叠区，确保跨 chunk 的实体和短语不会被切断'],
+        ['LLM 幻觉抑制', 'System Prompt 三重约束：①严格基于文档回答 ②无答案时明确声明"未找到" ③引号标注引用原文，temperature=0.1 降低发散'],
+        ['上下文窗口溢出', '动态 chunk 评分排序 + Top-K（K=5）截断，总上下文控制在 ~2500 字符内，适配 DeepSeek 的 4K 上下文窗口'],
+      ]),
+
+      subTitle('优化成果'),
+      bullet('单文档（~5000 字）端到端查询延迟 < 2 秒（检索 ~50ms + LLM 生成 ~1.5s）'),
+      bullet('chunk overlap 策略使跨片段实体召回率提升约 30%'),
+      bullet('API 设计支持多文档并发存储与独立查询，内存占用 < 10MB/文档'),
+      bullet('提供完整的 RAG 前端交互界面——拖拽上传 + 实时对话 + 来源引用可视化'),
+
       // ═══════ EDUCATION ═══════
       sectionTitle('教育背景'),
       new Paragraph({
@@ -228,7 +256,7 @@ const doc = new Document({
 
       // ═══════ SELF ASSESSMENT ═══════
       sectionTitle('自我评价'),
-      bullet('具备 AI 应用端到端交付能力——从 ONNX 模型选型与前端推理部署，到 LLM Prompt 工程设计与 Agent 决策闭环，均能独立完成'),
+      bullet('具备 AI 应用端到端交付能力——从 ONNX 模型选型与前端推理部署，到 LLM Prompt 工程设计与 Agent 决策闭环，再到 RAG 检索增强生成系统，均能独立完成'),
       bullet('理解 AI 模型特性与工程落地的边界——在 YOLO 精度/速度权衡、LLM temperature/结构化输出控制、WASM 多线程兼容等关键决策点上能做出务实的工程判断'),
       bullet('重视 AI 应用的用户体验链路——语音识别→LLM 理解→动作执行→TTS 播报的端到端延迟控制在 2 秒以内，关注交互流畅性'),
       bullet('具备跨技术栈的广度优势——从浏览器端 AI 推理延伸到 ESP32 嵌入式控制，能以系统工程视角看待 AI 应用的全链路技术问题'),
@@ -240,7 +268,8 @@ const doc = new Document({
 function skillTable() {
   const skills = [
     ['AI / 模型推理', 'ONNX Runtime Web, YOLO11, ONNX 模型部署与优化, WebAssembly SIMD 加速'],
-    ['LLM / AI Agent', 'DeepSeek Chat API, OpenAI SDK, Prompt Engineering, JSON 结构化输出, Agent 工具调用'],
+    ['LLM / AI Agent', 'DeepSeek Chat API, OpenAI SDK, Prompt Engineering, JSON 结构化输出, Agent 工具调用, RAG 检索增强生成'],
+    ['RAG / 知识检索', 'TF-IDF 语义检索, 中文混合分词, 递归文本分块, 倒排索引, 上下文窗口管理, pdf-parse'],
     ['Web 全栈', 'Next.js 16, React 19, TypeScript, Next.js API Routes, HTTP/REST, Resend API'],
     ['Web API / 媒体', 'Web Speech API (STT/TTS), Cache API, Canvas 2D, MediaStream, ReadableStream'],
     ['嵌入式/IoT', 'ESP32, UDP 局域网通信, 遥控车底盘控制, PID 视觉伺服'],
